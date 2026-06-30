@@ -67,20 +67,26 @@ bool Helper::isAdmin() {
     return elevated != FALSE;
 }
 
+void Helper::autoElevate() {
+    wchar_t path[MAX_PATH];
+    GetModuleFileNameW(NULL, path, MAX_PATH);
+    ShellExecuteW(NULL, L"runas", path, GetCommandLineW(), NULL, SW_SHOW);
+}
+
 std::string Helper::runWMIC(const std::string& alias, const std::string& property) {
     std::string cmd = "wmic " + alias + " get " + property + " /format:csv 2>nul";
     std::FILE* pipe = _popen(cmd.c_str(), "r");
     if (!pipe) {
-        logWrite("[WMIC] Failed to run: " + cmd);
-        return "";
+        logWrite("[WMIC] Failed, trying PowerShell fallback for: " + alias + " " + property);
+        return runPowerShell(alias + " " + property);
     }
     char buf[512];
     std::string output;
     while (std::fgets(buf, sizeof(buf), pipe) != NULL) output += buf;
     _pclose(pipe);
     if (output.empty()) {
-        logWrite("[WMIC] No output for: " + alias + " " + property);
-        return "";
+        logWrite("[WMIC] No output, trying PowerShell fallback for: " + alias + " " + property);
+        return runPowerShell(alias + " " + property);
     }
     std::stringstream ss(output);
     std::string line;
@@ -94,8 +100,78 @@ std::string Helper::runWMIC(const std::string& alias, const std::string& propert
             if (!val.empty() && val != property) return val;
         }
     }
-    logWrite("[WMIC] Property not found: " + alias + " " + property);
-    return "";
+    logWrite("[WMIC] Property not found, trying PowerShell fallback for: " + alias + " " + property);
+    return runPowerShell(alias + " " + property);
+}
+
+std::string Helper::runPowerShell(const std::string& wmicArgs) {
+    std::string psCmd;
+    if (wmicArgs.find("baseboard") != std::string::npos)
+        psCmd = "powershell -Command \"(Get-WmiObject Win32_BaseBoard).SerialNumber\" 2>nul";
+    else if (wmicArgs.find("cpu") != std::string::npos && wmicArgs.find("ProcessorId") != std::string::npos)
+        psCmd = "powershell -Command \"(Get-WmiObject Win32_Processor).ProcessorId\" 2>nul";
+    else if (wmicArgs.find("diskdrive") != std::string::npos)
+        psCmd = "powershell -Command \"(Get-WmiObject Win32_DiskDrive).SerialNumber\" 2>nul";
+    else if (wmicArgs.find("bios") != std::string::npos)
+        psCmd = "powershell -Command \"(Get-WmiObject Win32_BIOS).SerialNumber\" 2>nul";
+    else if (wmicArgs.find("nic") != std::string::npos)
+        psCmd = "powershell -Command \"(Get-NetAdapter | Where-Object {$_.Status -eq 'Up'}).MacAddress\" 2>nul";
+    else if (wmicArgs.find("csproduct") != std::string::npos)
+        psCmd = "powershell -Command \"(Get-WmiObject Win32_ComputerSystemProduct).UUID\" 2>nul";
+    else
+        return "";
+
+    logWrite("[PS] Running: " + psCmd);
+    std::FILE* pipe = _popen(psCmd.c_str(), "r");
+    if (!pipe) {
+        logWrite("[PS] Failed to run PowerShell");
+        return "";
+    }
+    char buf[512];
+    std::string output;
+    while (std::fgets(buf, sizeof(buf), pipe) != NULL) output += buf;
+    _pclose(pipe);
+    std::string result = trim(output);
+    logWrite("[PS] Result: '" + result + "'");
+    return result;
+}
+
+std::string Helper::sha256(const std::string& input) {
+    HCRYPTPROV prov = 0;
+    HCRYPTHASH hash = 0;
+    BYTE digest[32];
+    DWORD digestLen = sizeof(digest);
+    char hex[65];
+
+    if (!CryptAcquireContext(&prov, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT))
+        return "";
+    if (!CryptCreateHash(prov, CALG_SHA_256, 0, 0, &hash)) {
+        CryptReleaseContext(prov, 0);
+        return "";
+    }
+    CryptHashData(hash, (BYTE*)input.c_str(), (DWORD)input.size(), 0);
+    CryptGetHashParam(hash, HP_HASHVAL, digest, &digestLen, 0);
+
+    for (int i = 0; i < 32; i++)
+        snprintf(hex + i * 2, 3, "%02x", digest[i]);
+
+    CryptDestroyHash(hash);
+    CryptReleaseContext(prov, 0);
+    return std::string(hex);
+}
+
+void Helper::generateFingerprint() {
+    std::string combined;
+    for (const auto& h : g_hwids)
+        combined += h.second;
+
+    std::string hash = sha256(combined);
+    if (hash.empty()) {
+        logWrite("[FINGERPRINT] SHA256 failed");
+        return;
+    }
+    g_hwids.push_back({"HWID Fingerprint (SHA256)", hash});
+    logWrite("[FINGERPRINT] " + hash);
 }
 
 void Helper::addHWID(const std::string& name, const std::string& value) {
@@ -131,11 +207,12 @@ void Helper::exportResultsJSON() {
     f << "  \"timestamp\": \"" << escapeJSON(getTimestampISO()) << "\",\n";
     f << "  \"program\": \"" << escapeJSON(g_appName) << "\",\n";
     f << "  \"version\": \"" << escapeJSON(g_appVersion) << "\",\n";
+    f << "  \"fingerprint\": \"" << escapeJSON(g_hwids.back().second) << "\",\n";
     f << "  \"hwids\": {\n";
-    for (size_t i = 0; i < g_hwids.size(); i++) {
+    for (size_t i = 0; i < g_hwids.size() - 1; i++) {
         f << "    \"" << escapeJSON(g_hwids[i].first) << "\": \""
           << escapeJSON(g_hwids[i].second) << "\"";
-        if (i < g_hwids.size() - 1) f << ",";
+        if (i < g_hwids.size() - 2) f << ",";
         f << "\n";
     }
     f << "  }\n";
@@ -167,7 +244,8 @@ void Helper::showHelp() {
     std::cout << "  --quiet             Only output HWID values\n";
     std::cout << "  --headless          Skip prompts, useful for scripts\n";
     std::cout << "  --no-update         Skip auto-update check\n";
-    std::cout << "  --export FILE       Export as JSON to FILE\n";
+    std::cout << "  --export FILE       Export as JSON to FILE\n\n";
+    std::cout << "Requires Administrator privileges.\n";
 }
 
 void Helper::showVersion() {

@@ -31,10 +31,14 @@ namespace Helper {
 
     void setupConsole();
     std::string runWMIC(const std::string& alias, const std::string& property);
+    std::string runPowerShell(const std::string& command);
     std::string fetchURL(const std::wstring& url);
     bool isAdmin();
+    void autoElevate();
     void addHWID(const std::string& name, const std::string& value);
     void displayResults();
+    void generateFingerprint();
+    std::string sha256(const std::string& input);
     void exportResultsJSON();
     std::string getTimestampISO();
     std::string escapeJSON(const std::string& s);

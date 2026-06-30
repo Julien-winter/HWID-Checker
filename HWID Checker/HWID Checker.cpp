@@ -15,9 +15,10 @@ int main(int argc, char* argv[]) {
     }
 
     if (!Helper::isAdmin()) {
-        Color::setForegroundColor(Color::Red);
-        std::cout << "[!] Administrator privileges required.\n";
-        return 1;
+        Color::setForegroundColor(Color::Yellow);
+        std::cout << "[!] Administrator privileges required. Restarting...\n";
+        Helper::autoElevate();
+        return 0;
     }
 
     Helper::initLogging();
@@ -29,6 +30,7 @@ int main(int argc, char* argv[]) {
     Checks::collectMAC();
     Checks::collectUUID();
 
+    Helper::generateFingerprint();
     Helper::displayResults();
 
     if (!Helper::cliConfig.exportPath.empty())
