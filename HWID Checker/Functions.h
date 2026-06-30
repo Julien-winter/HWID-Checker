@@ -37,8 +37,6 @@ namespace Helper {
     void autoElevate();
     void addHWID(const std::string& name, const std::string& value);
     void displayResults();
-    void generateFingerprint();
-    std::string sha256(const std::string& input);
     void exportResultsJSON();
     std::string getTimestampISO();
     std::string escapeJSON(const std::string& s);

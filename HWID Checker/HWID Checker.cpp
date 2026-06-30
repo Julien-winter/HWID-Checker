@@ -30,7 +30,6 @@ int main(int argc, char* argv[]) {
     Checks::collectMAC();
     Checks::collectUUID();
 
-    Helper::generateFingerprint();
     Helper::displayResults();
 
     if (!Helper::cliConfig.exportPath.empty())

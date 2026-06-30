@@ -136,44 +136,6 @@ std::string Helper::runPowerShell(const std::string& wmicArgs) {
     return result;
 }
 
-std::string Helper::sha256(const std::string& input) {
-    HCRYPTPROV prov = 0;
-    HCRYPTHASH hash = 0;
-    BYTE digest[32];
-    DWORD digestLen = sizeof(digest);
-    char hex[65];
-
-    if (!CryptAcquireContext(&prov, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT))
-        return "";
-    if (!CryptCreateHash(prov, CALG_SHA_256, 0, 0, &hash)) {
-        CryptReleaseContext(prov, 0);
-        return "";
-    }
-    CryptHashData(hash, (BYTE*)input.c_str(), (DWORD)input.size(), 0);
-    CryptGetHashParam(hash, HP_HASHVAL, digest, &digestLen, 0);
-
-    for (int i = 0; i < 32; i++)
-        snprintf(hex + i * 2, 3, "%02x", digest[i]);
-
-    CryptDestroyHash(hash);
-    CryptReleaseContext(prov, 0);
-    return std::string(hex);
-}
-
-void Helper::generateFingerprint() {
-    std::string combined;
-    for (const auto& h : g_hwids)
-        combined += h.second;
-
-    std::string hash = sha256(combined);
-    if (hash.empty()) {
-        logWrite("[FINGERPRINT] SHA256 failed");
-        return;
-    }
-    g_hwids.push_back({"HWID Fingerprint (SHA256)", hash});
-    logWrite("[FINGERPRINT] " + hash);
-}
-
 void Helper::addHWID(const std::string& name, const std::string& value) {
     g_hwids.push_back({name, value.empty() ? "N/A" : value});
     logWrite("[HWID] " + name + ": " + (value.empty() ? "N/A" : value));
@@ -207,12 +169,11 @@ void Helper::exportResultsJSON() {
     f << "  \"timestamp\": \"" << escapeJSON(getTimestampISO()) << "\",\n";
     f << "  \"program\": \"" << escapeJSON(g_appName) << "\",\n";
     f << "  \"version\": \"" << escapeJSON(g_appVersion) << "\",\n";
-    f << "  \"fingerprint\": \"" << escapeJSON(g_hwids.back().second) << "\",\n";
     f << "  \"hwids\": {\n";
-    for (size_t i = 0; i < g_hwids.size() - 1; i++) {
+    for (size_t i = 0; i < g_hwids.size(); i++) {
         f << "    \"" << escapeJSON(g_hwids[i].first) << "\": \""
           << escapeJSON(g_hwids[i].second) << "\"";
-        if (i < g_hwids.size() - 2) f << ",";
+        if (i < g_hwids.size() - 1) f << ",";
         f << "\n";
     }
     f << "  }\n";

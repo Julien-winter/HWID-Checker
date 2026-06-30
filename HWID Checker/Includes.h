@@ -1,7 +1,6 @@
 #pragma once
 #include <Windows.h>
 #include <winhttp.h>
-#include <wincrypt.h>
 #include <iostream>
 #include <string>
 #include <sstream>
@@ -13,4 +12,3 @@
 #include "Functions.h"
 
 #pragma comment(lib, "winhttp.lib")
-#pragma comment(lib, "crypt32.lib")
