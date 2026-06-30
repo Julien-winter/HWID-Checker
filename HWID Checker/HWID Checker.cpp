@@ -9,11 +9,18 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
+    if (Helper::cliConfig.showVersion) {
+        Helper::showVersion();
+        return 0;
+    }
+
     if (!Helper::isAdmin()) {
         Color::setForegroundColor(Color::Red);
         std::cout << "[!] Administrator privileges required.\n";
         return 1;
     }
+
+    Helper::initLogging();
 
     Checks::collectMotherboardSerial();
     Checks::collectCPUId();
@@ -30,8 +37,12 @@ int main(int argc, char* argv[]) {
     if (!Helper::cliConfig.noUpdate)
         Checks::checkForUpdate();
 
-    Color::setForegroundColor(Color::LightGray);
-    std::cout << "\nPress any key to exit...";
-    std::cin.get();
+    Helper::closeLogging();
+
+    if (!Helper::cliConfig.headless) {
+        std::cout << "\nPress any key to exit...";
+        std::cin.get();
+    }
+
     return 0;
 }

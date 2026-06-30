@@ -8,6 +8,8 @@ struct RGBColor {
 struct CLIConfig {
     bool quiet = false;
     bool showHelp = false;
+    bool showVersion = false;
+    bool headless = false;
     bool noUpdate = false;
     std::string exportPath;
 };
@@ -23,7 +25,6 @@ namespace Checks {
 }
 
 namespace Helper {
-    extern std::mutex consoleMutex;
     extern CLIConfig cliConfig;
     extern std::vector<std::pair<std::string, std::string>> g_hwids;
     extern std::string g_repoUrl;
@@ -32,7 +33,7 @@ namespace Helper {
     std::string runWMIC(const std::string& alias, const std::string& property);
     std::string fetchURL(const std::wstring& url);
     bool isAdmin();
-    void printHWID(const std::string& name, const std::string& value);
+    void addHWID(const std::string& name, const std::string& value);
     void displayResults();
     void exportResultsJSON();
     std::string getTimestampISO();
@@ -40,6 +41,11 @@ namespace Helper {
     std::string trim(const std::string& s);
     CLIConfig parseCLI(int argc, char* argv[]);
     void showHelp();
+    void showVersion();
+
+    void initLogging();
+    void closeLogging();
+    void logWrite(const std::string& message);
 }
 namespace Color {
     void setForegroundColor(const RGBColor& aColor);
