@@ -1,0 +1,31 @@
+# Build results
+Build/
+Intermediates/
+*.exe
+*.pdb
+*.lib
+*.obj
+*.iobj
+*.ipdb
+*.log
+*.tlog
+*.recipe
+*.ilk
+*.exp
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.sln.docstates
+*.VC.db
+*.VC.VC.opendb
+*.aps
+*.ncb
+*.opendb
+*.sdf
+
+# User-specific
+*.rsuser
+*.userosscache
+*.DotSettings.user
