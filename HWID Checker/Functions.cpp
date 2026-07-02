@@ -74,20 +74,20 @@ void Helper::autoElevate() {
 }
 
 std::string Helper::runWMIC(const std::string& alias, const std::string& property) {
+    std::string psResult = runPowerShell(alias + " " + property);
+    if (!psResult.empty())
+        return psResult;
+
     std::string cmd = "wmic " + alias + " get " + property + " /format:csv 2>nul";
     std::FILE* pipe = _popen(cmd.c_str(), "r");
     if (!pipe) {
-        logWrite("[WMIC] Failed, trying PowerShell fallback for: " + alias + " " + property);
-        return runPowerShell(alias + " " + property);
+        return "";
     }
     char buf[512];
     std::string output;
     while (std::fgets(buf, sizeof(buf), pipe) != NULL) output += buf;
     _pclose(pipe);
-    if (output.empty()) {
-        logWrite("[WMIC] No output, trying PowerShell fallback for: " + alias + " " + property);
-        return runPowerShell(alias + " " + property);
-    }
+    if (output.empty()) return "";
     std::stringstream ss(output);
     std::string line;
     bool first = true;
@@ -100,8 +100,7 @@ std::string Helper::runWMIC(const std::string& alias, const std::string& propert
             if (!val.empty() && val != property) return val;
         }
     }
-    logWrite("[WMIC] Property not found, trying PowerShell fallback for: " + alias + " " + property);
-    return runPowerShell(alias + " " + property);
+    return "";
 }
 
 std::string Helper::runPowerShell(const std::string& wmicArgs) {
