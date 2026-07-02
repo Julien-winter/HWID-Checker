@@ -147,17 +147,28 @@ void Helper::addHWID(const std::string& name, const std::string& value) {
 
 void Helper::displayResults() {
     if (cliConfig.quiet) return;
+    size_t maxNameLen = 0;
+    for (const auto& h : g_hwids)
+        maxNameLen = (std::max)(maxNameLen, h.first.size());
+
     Color::setForegroundColor(Color::Cyan);
     std::cout << "\n+=========================================================+\n";
-    std::cout << "|                   HWID Checker v" << g_appVersion << "                  |\n";
+    std::cout << "|                   HWID Checker v" << g_appVersion;
+    size_t verPad = 58 - 28 - g_appVersion.size();
+    if (verPad > 0) std::cout << std::string(verPad, ' ');
+    std::cout << "|\n";
     std::cout << "+=========================================================+\n";
     for (const auto& h : g_hwids) {
         Color::setForegroundColor(Color::Yellow);
         std::cout << "|  " << h.first << ": ";
-        size_t padding = 44 - h.first.size() - h.second.size();
-        if (padding > 0) std::cout << std::string(padding, ' ');
+        size_t namePad = maxNameLen - h.first.size();
+        if (namePad > 0) std::cout << std::string(namePad, ' ');
         Color::setForegroundColor(h.second == "N/A" ? Color::Red : Color::Green);
-        std::cout << h.second << "  |\n";
+        std::cout << h.second;
+        size_t valPad = 49 - maxNameLen - h.second.size();
+        if (valPad > 0) std::cout << std::string(valPad, ' ');
+        Color::setForegroundColor(Color::Cyan);
+        std::cout << "|\n";
     }
     Color::setForegroundColor(Color::Cyan);
     std::cout << "+=========================================================+\n";
@@ -414,37 +425,38 @@ void Checks::collectCPUId() {
 
 void Checks::collectDiskSerial() {
     std::vector<std::string> serials;
-    std::string cmd = "wmic diskdrive get SerialNumber /format:csv 2>nul";
-    std::FILE* pipe = _popen(cmd.c_str(), "r");
-    if (pipe) {
-        char buf[512];
-        std::string output;
-        while (std::fgets(buf, sizeof(buf), pipe) != NULL) output += buf;
-        _pclose(pipe);
-        std::stringstream ss(output);
-        std::string line;
-        bool first = true;
-        while (std::getline(ss, line)) {
-            if (first) { first = false; continue; }
-            if (line.empty()) continue;
-            size_t comma = line.find(',');
-            if (comma != std::string::npos) {
-                std::string val = Helper::trim(line.substr(comma + 1));
-                if (!val.empty() && val != "SerialNumber")
-                    serials.push_back(val);
-            }
+    std::string ps = Helper::runPowerShell("diskdrive_multi");
+    if (!ps.empty()) {
+        size_t start = 0, end;
+        while ((end = ps.find(',', start)) != std::string::npos) {
+            std::string val = Helper::trim(ps.substr(start, end - start));
+            if (!val.empty()) serials.push_back(val);
+            start = end + 1;
         }
+        std::string last = Helper::trim(ps.substr(start));
+        if (!last.empty()) serials.push_back(last);
     }
     if (serials.empty()) {
-        std::string ps = Helper::runPowerShell("diskdrive_multi");
-        if (!ps.empty()) {
-            size_t start = 0, end;
-            while ((end = ps.find(',', start)) != std::string::npos) {
-                serials.push_back(Helper::trim(ps.substr(start, end - start)));
-                start = end + 1;
+        std::string cmd = "wmic diskdrive get SerialNumber /format:csv 2>nul";
+        std::FILE* pipe = _popen(cmd.c_str(), "r");
+        if (pipe) {
+            char buf[512];
+            std::string output;
+            while (std::fgets(buf, sizeof(buf), pipe) != NULL) output += buf;
+            _pclose(pipe);
+            std::stringstream ss(output);
+            std::string line;
+            bool first = true;
+            while (std::getline(ss, line)) {
+                if (first) { first = false; continue; }
+                if (line.empty()) continue;
+                size_t comma = line.find(',');
+                if (comma != std::string::npos) {
+                    std::string val = Helper::trim(line.substr(comma + 1));
+                    if (!val.empty() && val != "SerialNumber")
+                        serials.push_back(val);
+                }
             }
-            std::string last = Helper::trim(ps.substr(start));
-            if (!last.empty()) serials.push_back(last);
         }
     }
     if (serials.empty()) {
@@ -470,38 +482,38 @@ void Checks::collectBIOSSerial() {
 
 void Checks::collectMAC() {
     std::vector<std::string> macs;
-    std::string cmd = "wmic nic where NetEnabled=true get MACAddress /format:csv 2>nul";
-    std::FILE* pipe = _popen(cmd.c_str(), "r");
-    if (pipe) {
-        char buf[512];
-        std::string output;
-        while (std::fgets(buf, sizeof(buf), pipe) != NULL) output += buf;
-        _pclose(pipe);
-        std::stringstream ss(output);
-        std::string line;
-        bool first = true;
-        while (std::getline(ss, line)) {
-            if (first) { first = false; continue; }
-            if (line.empty()) continue;
-            size_t comma = line.find(',');
-            if (comma != std::string::npos) {
-                std::string val = Helper::trim(line.substr(comma + 1));
-                if (!val.empty() && val != "MACAddress")
-                    macs.push_back(val);
-            }
+    std::string ps = Helper::runPowerShell("nic_multi");
+    if (!ps.empty()) {
+        size_t start = 0, end;
+        while ((end = ps.find(',', start)) != std::string::npos) {
+            std::string val = Helper::trim(ps.substr(start, end - start));
+            if (!val.empty()) macs.push_back(val);
+            start = end + 1;
         }
+        std::string last = Helper::trim(ps.substr(start));
+        if (!last.empty()) macs.push_back(last);
     }
     if (macs.empty()) {
-        std::string ps = Helper::runPowerShell("nic_multi");
-        if (!ps.empty()) {
-            size_t start = 0, end;
-            while ((end = ps.find(',', start)) != std::string::npos) {
-                std::string val = Helper::trim(ps.substr(start, end - start));
-                if (!val.empty()) macs.push_back(val);
-                start = end + 1;
+        std::string cmd = "wmic nic where NetEnabled=true get MACAddress /format:csv 2>nul";
+        std::FILE* pipe = _popen(cmd.c_str(), "r");
+        if (pipe) {
+            char buf[512];
+            std::string output;
+            while (std::fgets(buf, sizeof(buf), pipe) != NULL) output += buf;
+            _pclose(pipe);
+            std::stringstream ss(output);
+            std::string line;
+            bool first = true;
+            while (std::getline(ss, line)) {
+                if (first) { first = false; continue; }
+                if (line.empty()) continue;
+                size_t comma = line.find(',');
+                if (comma != std::string::npos) {
+                    std::string val = Helper::trim(line.substr(comma + 1));
+                    if (!val.empty() && val != "MACAddress")
+                        macs.push_back(val);
+                }
             }
-            std::string last = Helper::trim(ps.substr(start));
-            if (!last.empty()) macs.push_back(last);
         }
     }
     if (macs.empty()) {
