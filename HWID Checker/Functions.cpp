@@ -153,7 +153,7 @@ void Helper::displayResults() {
     Color::setForegroundColor(Color::Cyan);
     std::cout << "\n+=========================================================+\n";
     std::cout << "|                   HWID Checker v" << g_appVersion;
-    size_t verPad = 58 - 28 - g_appVersion.size();
+    int verPad = 58 - 28 - (int)g_appVersion.size();
     if (verPad > 0) std::cout << std::string(verPad, ' ');
     std::cout << "|\n";
     std::cout << "+=========================================================+\n";
@@ -164,7 +164,7 @@ void Helper::displayResults() {
         if (namePad > 0) std::cout << std::string(namePad, ' ');
         Color::setForegroundColor(h.second == "N/A" ? Color::Red : Color::Green);
         std::cout << h.second;
-        size_t valPad = 49 - maxNameLen - h.second.size();
+        int valPad = 49 - (int)maxNameLen - (int)h.second.size();
         if (valPad > 0) std::cout << std::string(valPad, ' ');
         Color::setForegroundColor(Color::Cyan);
         std::cout << "|\n";
