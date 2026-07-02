@@ -16,7 +16,10 @@ std::string Helper::trim(const std::string& s) {
     size_t start = s.find_first_not_of(" \t\r\n");
     if (start == std::string::npos) return "";
     size_t end = s.find_last_not_of(" \t\r\n");
-    return s.substr(start, end - start + 1);
+    std::string result = s.substr(start, end - start + 1);
+    while (!result.empty() && result.back() == '.')
+        result.pop_back();
+    return result;
 }
 
 std::string Helper::escapeJSON(const std::string& s) {
@@ -152,10 +155,12 @@ void Helper::displayResults() {
 
     Color::setForegroundColor(Color::Cyan);
     std::cout << "\n+=========================================================+\n";
-    std::cout << "|                   HWID Checker v" << g_appVersion;
-    int verPad = 58 - 28 - (int)g_appVersion.size();
-    if (verPad > 0) std::cout << std::string(verPad, ' ');
-    std::cout << "|\n";
+    {
+        std::string title = "HWID Checker v" + g_appVersion;
+        int pad = (57 - (int)title.size()) / 2;
+        int rightPad = 57 - pad - (int)title.size();
+        std::cout << "|" << std::string(pad, ' ') << title << std::string(rightPad, ' ') << "|\n";
+    }
     std::cout << "+=========================================================+\n";
     for (const auto& h : g_hwids) {
         Color::setForegroundColor(Color::Yellow);
@@ -164,7 +169,7 @@ void Helper::displayResults() {
         if (namePad > 0) std::cout << std::string(namePad, ' ');
         Color::setForegroundColor(h.second == "N/A" ? Color::Red : Color::Green);
         std::cout << h.second;
-        int valPad = 49 - (int)maxNameLen - (int)h.second.size();
+        int valPad = 51 - (int)maxNameLen - (int)h.second.size();
         if (valPad > 0) std::cout << std::string(valPad, ' ');
         Color::setForegroundColor(Color::Cyan);
         std::cout << "|\n";
