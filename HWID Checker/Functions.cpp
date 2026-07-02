@@ -110,10 +110,14 @@ std::string Helper::runPowerShell(const std::string& wmicArgs) {
         psCmd = "powershell -Command \"(Get-WmiObject Win32_BaseBoard).SerialNumber\" 2>nul";
     else if (wmicArgs.find("cpu") != std::string::npos && wmicArgs.find("ProcessorId") != std::string::npos)
         psCmd = "powershell -Command \"(Get-WmiObject Win32_Processor).ProcessorId\" 2>nul";
+    else if (wmicArgs.find("diskdrive_multi") != std::string::npos)
+        psCmd = "powershell -Command \"(Get-WmiObject Win32_DiskDrive).SerialNumber -join ','\" 2>nul";
     else if (wmicArgs.find("diskdrive") != std::string::npos)
         psCmd = "powershell -Command \"(Get-WmiObject Win32_DiskDrive).SerialNumber\" 2>nul";
     else if (wmicArgs.find("bios") != std::string::npos)
         psCmd = "powershell -Command \"(Get-WmiObject Win32_BIOS).SerialNumber\" 2>nul";
+    else if (wmicArgs.find("nic_multi") != std::string::npos)
+        psCmd = "powershell -Command \"(Get-NetAdapter | Where-Object {$_.Status -eq 'Up'}).MacAddress -join ','\" 2>nul";
     else if (wmicArgs.find("nic") != std::string::npos)
         psCmd = "powershell -Command \"(Get-NetAdapter | Where-Object {$_.Status -eq 'Up'}).MacAddress\" 2>nul";
     else if (wmicArgs.find("csproduct") != std::string::npos)
@@ -144,16 +148,39 @@ void Helper::addHWID(const std::string& name, const std::string& value) {
 void Helper::displayResults() {
     if (cliConfig.quiet) return;
     Color::setForegroundColor(Color::Cyan);
-    std::cout << "\n====================== HWID Checker ======================\n";
+    std::cout << "\n+=========================================================+\n";
+    std::cout << "|                   HWID Checker v" << g_appVersion << "                  |\n";
+    std::cout << "+=========================================================+\n";
     for (const auto& h : g_hwids) {
         Color::setForegroundColor(Color::Yellow);
-        std::cout << h.first << ": ";
+        std::cout << "|  " << h.first << ": ";
+        size_t padding = 44 - h.first.size() - h.second.size();
+        if (padding > 0) std::cout << std::string(padding, ' ');
         Color::setForegroundColor(h.second == "N/A" ? Color::Red : Color::Green);
-        std::cout << h.second << "\n";
+        std::cout << h.second << "  |\n";
     }
     Color::setForegroundColor(Color::Cyan);
-    std::cout << "========================================================\n";
+    std::cout << "+=========================================================+\n";
     Color::setForegroundColor(Color::LightGray);
+}
+
+void Helper::copyToClipboard() {
+    if (!cliConfig.copy) return;
+    std::string text;
+    for (const auto& h : g_hwids)
+        text += h.first + ": " + h.second + "\r\n";
+    if (OpenClipboard(NULL)) {
+        EmptyClipboard();
+        HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, text.size() + 1);
+        if (hMem) {
+            memcpy(GlobalLock(hMem), text.c_str(), text.size() + 1);
+            GlobalUnlock(hMem);
+            SetClipboardData(CF_TEXT, hMem);
+        }
+        CloseClipboard();
+        if (!cliConfig.quiet)
+            std::cout << "[+] Results copied to clipboard\n";
+    }
 }
 
 void Helper::exportResultsJSON() {
@@ -182,6 +209,27 @@ void Helper::exportResultsJSON() {
     logWrite("[EXPORT] Saved to " + cliConfig.exportPath);
 }
 
+void Helper::exportResultsCSV() {
+    if (cliConfig.exportPath.empty()) return;
+    std::ofstream f(cliConfig.exportPath);
+    if (!f.is_open()) {
+        logWrite("[EXPORT] Failed to open: " + cliConfig.exportPath);
+        if (!cliConfig.quiet)
+            std::cout << "[!] Could not write to " << cliConfig.exportPath << "\n";
+        return;
+    }
+    f << "Name,Value\n";
+    for (const auto& h : g_hwids) {
+        std::string name = h.first;
+        std::string value = h.second;
+        if (name.find(',') != std::string::npos) name = "\"" + name + "\"";
+        if (value.find(',') != std::string::npos) value = "\"" + value + "\"";
+        f << name << "," << value << "\n";
+    }
+    f.close();
+    logWrite("[EXPORT] Saved CSV to " + cliConfig.exportPath);
+}
+
 CLIConfig Helper::parseCLI(int argc, char* argv[]) {
     CLIConfig config;
     for (int i = 1; i < argc; i++) {
@@ -191,6 +239,7 @@ CLIConfig Helper::parseCLI(int argc, char* argv[]) {
         else if (arg == "--quiet") config.quiet = true;
         else if (arg == "--headless") config.headless = true;
         else if (arg == "--no-update") config.noUpdate = true;
+        else if (arg == "--copy") config.copy = true;
         else if (arg == "--export" && i + 1 < argc) config.exportPath = argv[++i];
     }
     return config;
@@ -205,7 +254,8 @@ void Helper::showHelp() {
     std::cout << "  --quiet             Only output HWID values\n";
     std::cout << "  --headless          Skip prompts, useful for scripts\n";
     std::cout << "  --no-update         Skip auto-update check\n";
-    std::cout << "  --export FILE       Export as JSON to FILE\n\n";
+    std::cout << "  --copy              Copy results to clipboard\n";
+    std::cout << "  --export FILE       Export to FILE (.json or .csv)\n\n";
     std::cout << "Requires Administrator privileges.\n";
 }
 
@@ -363,8 +413,46 @@ void Checks::collectCPUId() {
 }
 
 void Checks::collectDiskSerial() {
-    std::string val = Helper::runWMIC("diskdrive", "SerialNumber");
-    Helper::addHWID("Disk Serial", val);
+    std::vector<std::string> serials;
+    std::string cmd = "wmic diskdrive get SerialNumber /format:csv 2>nul";
+    std::FILE* pipe = _popen(cmd.c_str(), "r");
+    if (pipe) {
+        char buf[512];
+        std::string output;
+        while (std::fgets(buf, sizeof(buf), pipe) != NULL) output += buf;
+        _pclose(pipe);
+        std::stringstream ss(output);
+        std::string line;
+        bool first = true;
+        while (std::getline(ss, line)) {
+            if (first) { first = false; continue; }
+            if (line.empty()) continue;
+            size_t comma = line.find(',');
+            if (comma != std::string::npos) {
+                std::string val = Helper::trim(line.substr(comma + 1));
+                if (!val.empty() && val != "SerialNumber")
+                    serials.push_back(val);
+            }
+        }
+    }
+    if (serials.empty()) {
+        std::string ps = Helper::runPowerShell("diskdrive_multi");
+        if (!ps.empty()) {
+            size_t start = 0, end;
+            while ((end = ps.find(',', start)) != std::string::npos) {
+                serials.push_back(Helper::trim(ps.substr(start, end - start)));
+                start = end + 1;
+            }
+            std::string last = Helper::trim(ps.substr(start));
+            if (!last.empty()) serials.push_back(last);
+        }
+    }
+    if (serials.empty()) {
+        Helper::addHWID("Disk 0 Serial", "N/A");
+        return;
+    }
+    for (size_t i = 0; i < serials.size(); i++)
+        Helper::addHWID("Disk " + std::to_string(i) + " Serial", serials[i]);
 }
 
 void Checks::collectBIOSSerial() {
@@ -381,8 +469,49 @@ void Checks::collectBIOSSerial() {
 }
 
 void Checks::collectMAC() {
-    std::string val = Helper::runWMIC("nic where NetEnabled=true", "MACAddress");
-    Helper::addHWID("MAC Address", val);
+    std::vector<std::string> macs;
+    std::string cmd = "wmic nic where NetEnabled=true get MACAddress /format:csv 2>nul";
+    std::FILE* pipe = _popen(cmd.c_str(), "r");
+    if (pipe) {
+        char buf[512];
+        std::string output;
+        while (std::fgets(buf, sizeof(buf), pipe) != NULL) output += buf;
+        _pclose(pipe);
+        std::stringstream ss(output);
+        std::string line;
+        bool first = true;
+        while (std::getline(ss, line)) {
+            if (first) { first = false; continue; }
+            if (line.empty()) continue;
+            size_t comma = line.find(',');
+            if (comma != std::string::npos) {
+                std::string val = Helper::trim(line.substr(comma + 1));
+                if (!val.empty() && val != "MACAddress")
+                    macs.push_back(val);
+            }
+        }
+    }
+    if (macs.empty()) {
+        std::string ps = Helper::runPowerShell("nic_multi");
+        if (!ps.empty()) {
+            size_t start = 0, end;
+            while ((end = ps.find(',', start)) != std::string::npos) {
+                std::string val = Helper::trim(ps.substr(start, end - start));
+                if (!val.empty()) macs.push_back(val);
+                start = end + 1;
+            }
+            std::string last = Helper::trim(ps.substr(start));
+            if (!last.empty()) macs.push_back(last);
+        }
+    }
+    if (macs.empty()) {
+        Helper::addHWID("MAC Address", "N/A");
+        return;
+    }
+    for (size_t i = 0; i < macs.size(); i++) {
+        std::string label = (macs.size() == 1) ? "MAC Address" : ("MAC " + std::to_string(i));
+        Helper::addHWID(label, macs[i]);
+    }
 }
 
 void Checks::collectUUID() {

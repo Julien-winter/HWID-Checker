@@ -11,6 +11,7 @@ struct CLIConfig {
     bool showVersion = false;
     bool headless = false;
     bool noUpdate = false;
+    bool copy = false;
     std::string exportPath;
 };
 
@@ -37,7 +38,9 @@ namespace Helper {
     void autoElevate();
     void addHWID(const std::string& name, const std::string& value);
     void displayResults();
+    void copyToClipboard();
     void exportResultsJSON();
+    void exportResultsCSV();
     std::string getTimestampISO();
     std::string escapeJSON(const std::string& s);
     std::string trim(const std::string& s);
