@@ -8,7 +8,7 @@ namespace Helper {
     CLIConfig cliConfig;
     std::vector<std::pair<std::string, std::string>> g_hwids;
     std::string g_appName = "HWID Checker";
-    std::string g_appVersion = "1.0.1";
+    std::string g_appVersion = "1.0.2";
     std::string g_repoUrl = "Julien-winter/HWID-Checker";
     std::vector<DiskInfo> g_disks;
     std::vector<MACInfo> g_macs;
@@ -149,6 +149,7 @@ std::string Helper::runPowerShell(const std::string& wmicArgs) {
 }
 
 void Helper::addHWID(const std::string& name, const std::string& value) {
+    std::lock_guard<std::mutex> lock(logMutex);
     g_hwids.push_back({name, value.empty() ? "N/A" : value});
     logWrite("[HWID] " + name + ": " + (value.empty() ? "N/A" : value));
 }

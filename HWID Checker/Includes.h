@@ -9,6 +9,7 @@
 #include <vector>
 #include <chrono>
 #include <algorithm>
+#include <thread>
 #include "Functions.h"
 
 #pragma comment(lib, "winhttp.lib")
