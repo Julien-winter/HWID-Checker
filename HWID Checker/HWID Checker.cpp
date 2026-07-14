@@ -34,6 +34,8 @@ int main(int argc, char* argv[]) {
             Helper::g_moboSerial.clear();
             Helper::g_uuid.clear();
             system("cls");
+            Color::setForegroundColor(Color::LightGray);
+            std::cout << "Collecting hardware info...\n";
         }
 
         Checks::collectMotherboardSerial();
@@ -69,9 +71,9 @@ int main(int argc, char* argv[]) {
         if (Helper::cliConfig.headless)
             break;
 
-        std::cout << "\nPress any key to get your hardware serials again...";
-        std::cin.get();
-        std::cin.ignore((std::numeric_limits<std::streamsize>::max)(), '\n');
+        std::cout << "\nPress Enter to refresh...";
+        std::string dummy;
+        std::getline(std::cin, dummy);
     }
 
     Helper::closeLogging();
