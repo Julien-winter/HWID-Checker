@@ -15,6 +15,16 @@ struct CLIConfig {
     std::string exportPath;
 };
 
+struct DiskInfo {
+    std::string model;
+    std::string serial;
+};
+
+struct MACInfo {
+    std::string address;
+    std::string transport;
+};
+
 namespace Checks {
     void collectMotherboardSerial();
     void collectCPUId();
@@ -29,6 +39,12 @@ namespace Helper {
     extern CLIConfig cliConfig;
     extern std::vector<std::pair<std::string, std::string>> g_hwids;
     extern std::string g_repoUrl;
+    extern std::vector<DiskInfo> g_disks;
+    extern std::vector<MACInfo> g_macs;
+    extern std::string g_cpuSerial;
+    extern std::string g_biosSerial;
+    extern std::string g_moboSerial;
+    extern std::string g_uuid;
 
     void setupConsole();
     std::string runWMIC(const std::string& alias, const std::string& property);

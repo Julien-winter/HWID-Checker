@@ -23,40 +23,57 @@ int main(int argc, char* argv[]) {
 
     Helper::initLogging();
 
-    Checks::collectMotherboardSerial();
-    Checks::collectCPUId();
-    Checks::collectDiskSerial();
-    Checks::collectBIOSSerial();
-    Checks::collectMAC();
-    Checks::collectUUID();
-
-    Helper::displayResults();
-    Helper::copyToClipboard();
-
-    if (!Helper::cliConfig.exportPath.empty()) {
-        std::string ext = Helper::cliConfig.exportPath;
-        size_t dot = ext.rfind('.');
-        if (dot != std::string::npos) {
-            std::string extLower = ext.substr(dot + 1);
-            std::transform(extLower.begin(), extLower.end(), extLower.begin(), ::tolower);
-            if (extLower == "csv")
-                Helper::exportResultsCSV();
-            else
-                Helper::exportResultsJSON();
-        } else {
-            Helper::exportResultsJSON();
+    bool firstRun = true;
+    while (true) {
+        if (!firstRun) {
+            Helper::g_hwids.clear();
+            Helper::g_disks.clear();
+            Helper::g_macs.clear();
+            Helper::g_cpuSerial.clear();
+            Helper::g_biosSerial.clear();
+            Helper::g_moboSerial.clear();
+            Helper::g_uuid.clear();
+            system("cls");
         }
-    }
 
-    if (!Helper::cliConfig.noUpdate)
-        Checks::checkForUpdate();
+        Checks::collectMotherboardSerial();
+        Checks::collectCPUId();
+        Checks::collectDiskSerial();
+        Checks::collectBIOSSerial();
+        Checks::collectMAC();
+        Checks::collectUUID();
 
-    Helper::closeLogging();
+        Helper::displayResults();
+        Helper::copyToClipboard();
 
-    if (!Helper::cliConfig.headless) {
-        std::cout << "\nPress any key to exit...";
+        if (firstRun && !Helper::cliConfig.exportPath.empty()) {
+            std::string ext = Helper::cliConfig.exportPath;
+            size_t dot = ext.rfind('.');
+            if (dot != std::string::npos) {
+                std::string extLower = ext.substr(dot + 1);
+                std::transform(extLower.begin(), extLower.end(), extLower.begin(), ::tolower);
+                if (extLower == "csv")
+                    Helper::exportResultsCSV();
+                else
+                    Helper::exportResultsJSON();
+            } else {
+                Helper::exportResultsJSON();
+            }
+        }
+
+        if (firstRun && !Helper::cliConfig.noUpdate)
+            Checks::checkForUpdate();
+
+        firstRun = false;
+
+        if (Helper::cliConfig.headless)
+            break;
+
+        std::cout << "\nPress any key to get your hardware serials again...";
         std::cin.get();
     }
+
+    Helper::closeLogging();
 
     return 0;
 }

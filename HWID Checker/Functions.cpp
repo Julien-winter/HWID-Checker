@@ -8,8 +8,14 @@ namespace Helper {
     CLIConfig cliConfig;
     std::vector<std::pair<std::string, std::string>> g_hwids;
     std::string g_appName = "HWID Checker";
-    std::string g_appVersion = "1.0.0";
+    std::string g_appVersion = "1.0.1";
     std::string g_repoUrl = "Julien-winter/HWID-Checker";
+    std::vector<DiskInfo> g_disks;
+    std::vector<MACInfo> g_macs;
+    std::string g_cpuSerial;
+    std::string g_biosSerial;
+    std::string g_moboSerial;
+    std::string g_uuid;
 }
 
 std::string Helper::trim(const std::string& s) {
@@ -149,33 +155,72 @@ void Helper::addHWID(const std::string& name, const std::string& value) {
 
 void Helper::displayResults() {
     if (cliConfig.quiet) return;
-    size_t maxNameLen = 0;
-    for (const auto& h : g_hwids)
-        maxNameLen = (std::max)(maxNameLen, h.first.size());
 
-    Color::setForegroundColor(Color::Cyan);
-    std::cout << "\n+=========================================================+\n";
-    {
-        std::string title = "HWID Checker v" + g_appVersion;
-        int pad = (57 - (int)title.size()) / 2;
-        int rightPad = 57 - pad - (int)title.size();
-        std::cout << "|" << std::string(pad, ' ') << title << std::string(rightPad, ' ') << "|\n";
+    Color::setForegroundColor(Color::LightGray);
+
+    if (!g_disks.empty()) {
+        size_t maxModel = 5;
+        for (const auto& d : g_disks)
+            maxModel = (std::max)(maxModel, d.model.size());
+        maxModel += 4;
+
+        std::cout << "Model" << std::string(maxModel > 5 ? maxModel - 5 : 0, ' ') << "SerialNumber\n";
+        for (const auto& d : g_disks) {
+            Color::setForegroundColor(Color::Green);
+            std::cout << d.model;
+            size_t pad = maxModel - d.model.size();
+            if (pad > 0) std::cout << std::string(pad, ' ');
+            Color::setForegroundColor(Color::Yellow);
+            std::cout << d.serial << "\n";
+        }
+        std::cout << "\n";
     }
-    std::cout << "+=========================================================+\n";
-    for (const auto& h : g_hwids) {
+
+    Color::setForegroundColor(Color::LightGray);
+    std::cout << "CPU\nSerialNumber\n";
+    if (g_cpuSerial.empty()) {
+        Color::setForegroundColor(Color::Red);
+        std::cout << "Unknown\n";
+    } else {
         Color::setForegroundColor(Color::Yellow);
-        std::cout << "|  " << h.first << ": ";
-        size_t namePad = maxNameLen - h.first.size();
-        if (namePad > 0) std::cout << std::string(namePad, ' ');
-        Color::setForegroundColor(h.second == "N/A" ? Color::Red : Color::Green);
-        std::cout << h.second;
-        int valPad = 51 - (int)maxNameLen - (int)h.second.size();
-        if (valPad > 0) std::cout << std::string(valPad, ' ');
-        Color::setForegroundColor(Color::Cyan);
-        std::cout << "|\n";
+        std::cout << g_cpuSerial << "\n";
     }
-    Color::setForegroundColor(Color::Cyan);
-    std::cout << "+=========================================================+\n";
+    std::cout << "\n";
+
+    Color::setForegroundColor(Color::LightGray);
+    std::cout << "BIOS\nSerialNumber\n";
+    Color::setForegroundColor(g_biosSerial.empty() ? Color::Red : Color::Yellow);
+    std::cout << (g_biosSerial.empty() ? "N/A" : g_biosSerial) << "\n\n";
+
+    Color::setForegroundColor(Color::LightGray);
+    std::cout << "Motherboard\nSerialNumber\n";
+    Color::setForegroundColor(g_moboSerial.empty() ? Color::Red : Color::Yellow);
+    std::cout << (g_moboSerial.empty() ? "N/A" : g_moboSerial) << "\n\n";
+
+    Color::setForegroundColor(Color::LightGray);
+    std::cout << "smBIOS UUID\nUUID\n";
+    Color::setForegroundColor(g_uuid.empty() ? Color::Red : Color::Yellow);
+    std::cout << (g_uuid.empty() ? "N/A" : g_uuid) << "\n\n";
+
+    if (!g_macs.empty()) {
+        size_t maxAddr = 16;
+        for (const auto& m : g_macs)
+            maxAddr = (std::max)(maxAddr, m.address.size());
+        maxAddr += 4;
+
+        Color::setForegroundColor(Color::LightGray);
+        std::cout << "Physical Address" << std::string(maxAddr > 16 ? maxAddr - 16 : 0, ' ') << "Transport Name\n";
+        std::cout << "=========================================================\n";
+        for (const auto& m : g_macs) {
+            Color::setForegroundColor(Color::Green);
+            std::cout << m.address;
+            size_t pad = maxAddr - m.address.size();
+            if (pad > 0) std::cout << std::string(pad, ' ');
+            Color::setForegroundColor(Color::LightGray);
+            std::cout << m.transport << "\n";
+        }
+    }
+
     Color::setForegroundColor(Color::LightGray);
 }
 
@@ -419,56 +464,91 @@ void Color::setForegroundColor(const RGBColor& aColor) {
 
 void Checks::collectMotherboardSerial() {
     std::string val = Helper::runWMIC("baseboard", "SerialNumber");
+    Helper::g_moboSerial = val;
     Helper::addHWID("Motherboard Serial", val);
 }
 
 void Checks::collectCPUId() {
     std::string val = Helper::runWMIC("cpu", "ProcessorId");
+    std::string serial = "";
+    std::string psCmd = "powershell -Command \"(Get-WmiObject Win32_Processor).SerialNumber\" 2>nul";
+    Helper::logWrite("[PS] Running CPU serial collection...");
+    std::FILE* pipe = _popen(psCmd.c_str(), "r");
+    if (pipe) {
+        char buf[512];
+        std::string output;
+        while (std::fgets(buf, sizeof(buf), pipe) != NULL) output += buf;
+        _pclose(pipe);
+        serial = Helper::trim(output);
+    }
+    Helper::g_cpuSerial = serial;
     Helper::addHWID("CPU ID", val);
 }
 
 void Checks::collectDiskSerial() {
-    std::vector<std::string> serials;
-    std::string ps = Helper::runPowerShell("diskdrive_multi");
-    if (!ps.empty()) {
-        size_t start = 0, end;
-        while ((end = ps.find(',', start)) != std::string::npos) {
-            std::string val = Helper::trim(ps.substr(start, end - start));
-            if (!val.empty()) serials.push_back(val);
-            start = end + 1;
+    std::string psCmd = "powershell -Command \"Get-WmiObject Win32_DiskDrive | ForEach-Object { $_.Model + '|' + $_.SerialNumber }\" 2>nul";
+    Helper::logWrite("[PS] Running disk collection...");
+    std::FILE* pipe = _popen(psCmd.c_str(), "r");
+    if (pipe) {
+        char buf[512];
+        std::string output;
+        while (std::fgets(buf, sizeof(buf), pipe) != NULL) output += buf;
+        _pclose(pipe);
+        std::stringstream ss(output);
+        std::string line;
+        while (std::getline(ss, line)) {
+            line = Helper::trim(line);
+            if (line.empty()) continue;
+            size_t sep = line.find('|');
+            if (sep != std::string::npos) {
+                DiskInfo info;
+                info.model = Helper::trim(line.substr(0, sep));
+                info.serial = Helper::trim(line.substr(sep + 1));
+                if (!info.model.empty()) {
+                    Helper::g_disks.push_back(info);
+                    Helper::logWrite("[DISK] " + info.model + " | " + info.serial);
+                }
+            }
         }
-        std::string last = Helper::trim(ps.substr(start));
-        if (!last.empty()) serials.push_back(last);
     }
-    if (serials.empty()) {
-        std::string cmd = "wmic diskdrive get SerialNumber /format:csv 2>nul";
-        std::FILE* pipe = _popen(cmd.c_str(), "r");
-        if (pipe) {
+
+    if (Helper::g_disks.empty()) {
+        std::string cmd = "wmic diskdrive get Model,SerialNumber /format:csv 2>nul";
+        std::FILE* wpipe = _popen(cmd.c_str(), "r");
+        if (wpipe) {
             char buf[512];
             std::string output;
-            while (std::fgets(buf, sizeof(buf), pipe) != NULL) output += buf;
-            _pclose(pipe);
+            while (std::fgets(buf, sizeof(buf), wpipe) != NULL) output += buf;
+            _pclose(wpipe);
             std::stringstream ss(output);
             std::string line;
             bool first = true;
             while (std::getline(ss, line)) {
                 if (first) { first = false; continue; }
                 if (line.empty()) continue;
-                size_t comma = line.find(',');
-                if (comma != std::string::npos) {
-                    std::string val = Helper::trim(line.substr(comma + 1));
-                    if (!val.empty() && val != "SerialNumber")
-                        serials.push_back(val);
+                std::stringstream ls(line);
+                std::string cell;
+                std::vector<std::string> cells;
+                while (std::getline(ls, cell, ',')) cells.push_back(Helper::trim(cell));
+                if (cells.size() >= 3 && !cells[1].empty() && cells[1] != "Model") {
+                    DiskInfo info;
+                    info.model = cells[1];
+                    info.serial = cells[2];
+                    Helper::g_disks.push_back(info);
                 }
             }
         }
     }
-    if (serials.empty()) {
-        Helper::addHWID("Disk 0 Serial", "N/A");
-        return;
+
+    if (Helper::g_disks.empty()) {
+        DiskInfo fallback;
+        fallback.model = "Unknown";
+        fallback.serial = "N/A";
+        Helper::g_disks.push_back(fallback);
     }
-    for (size_t i = 0; i < serials.size(); i++)
-        Helper::addHWID("Disk " + std::to_string(i) + " Serial", serials[i]);
+
+    for (const auto& d : Helper::g_disks)
+        Helper::addHWID("Disk: " + d.model, d.serial);
 }
 
 void Checks::collectBIOSSerial() {
@@ -481,56 +561,81 @@ void Checks::collectBIOSSerial() {
         lower.find("default") != std::string::npos) {
         val.clear();
     }
+    Helper::g_biosSerial = val;
     Helper::addHWID("BIOS Serial", val);
 }
 
 void Checks::collectMAC() {
-    std::vector<std::string> macs;
-    std::string ps = Helper::runPowerShell("nic_multi");
-    if (!ps.empty()) {
-        size_t start = 0, end;
-        while ((end = ps.find(',', start)) != std::string::npos) {
-            std::string val = Helper::trim(ps.substr(start, end - start));
-            if (!val.empty()) macs.push_back(val);
-            start = end + 1;
-        }
-        std::string last = Helper::trim(ps.substr(start));
-        if (!last.empty()) macs.push_back(last);
-    }
-    if (macs.empty()) {
-        std::string cmd = "wmic nic where NetEnabled=true get MACAddress /format:csv 2>nul";
-        std::FILE* pipe = _popen(cmd.c_str(), "r");
-        if (pipe) {
-            char buf[512];
-            std::string output;
-            while (std::fgets(buf, sizeof(buf), pipe) != NULL) output += buf;
-            _pclose(pipe);
-            std::stringstream ss(output);
-            std::string line;
-            bool first = true;
-            while (std::getline(ss, line)) {
-                if (first) { first = false; continue; }
-                if (line.empty()) continue;
-                size_t comma = line.find(',');
-                if (comma != std::string::npos) {
-                    std::string val = Helper::trim(line.substr(comma + 1));
-                    if (!val.empty() && val != "MACAddress")
-                        macs.push_back(val);
+    std::string getmacCmd = "getmac /v /fo list 2>nul";
+    Helper::logWrite("[PS] Running MAC collection via getmac...");
+    std::FILE* pipe = _popen(getmacCmd.c_str(), "r");
+    if (pipe) {
+        char buf[512];
+        std::string output;
+        while (std::fgets(buf, sizeof(buf), pipe) != NULL) output += buf;
+        _pclose(pipe);
+        std::stringstream ss(output);
+        std::string line;
+        std::string curAddr;
+        while (std::getline(ss, line)) {
+            line = Helper::trim(line);
+            if (line.empty()) continue;
+            if (line.find("Physical Address") != std::string::npos) {
+                size_t colon = line.find(':');
+                if (colon != std::string::npos)
+                    curAddr = Helper::trim(line.substr(colon + 1));
+            } else if (line.find("Transport Name") != std::string::npos) {
+                size_t colon = line.find(':');
+                if (colon != std::string::npos && !curAddr.empty()) {
+                    MACInfo info;
+                    info.address = curAddr;
+                    info.transport = Helper::trim(line.substr(colon + 1));
+                    Helper::g_macs.push_back(info);
+                    Helper::logWrite("[MAC] " + info.address + " | " + info.transport);
+                    curAddr.clear();
                 }
             }
         }
     }
-    if (macs.empty()) {
-        Helper::addHWID("MAC Address", "N/A");
-        return;
+
+    if (Helper::g_macs.empty()) {
+        std::string psCmd = "powershell -Command \"Get-NetAdapter | ForEach-Object { $_.MacAddress + '|' + $_.InterfaceDescription }\" 2>nul";
+        std::FILE* ppipe = _popen(psCmd.c_str(), "r");
+        if (ppipe) {
+            char buf[512];
+            std::string output;
+            while (std::fgets(buf, sizeof(buf), ppipe) != NULL) output += buf;
+            _pclose(ppipe);
+            std::stringstream ss(output);
+            std::string line;
+            while (std::getline(ss, line)) {
+                line = Helper::trim(line);
+                if (line.empty()) continue;
+                size_t sep = line.find('|');
+                if (sep != std::string::npos) {
+                    MACInfo info;
+                    info.address = Helper::trim(line.substr(0, sep));
+                    info.transport = Helper::trim(line.substr(sep + 1));
+                    if (!info.address.empty())
+                        Helper::g_macs.push_back(info);
+                }
+            }
+        }
     }
-    for (size_t i = 0; i < macs.size(); i++) {
-        std::string label = (macs.size() == 1) ? "MAC Address" : ("MAC " + std::to_string(i));
-        Helper::addHWID(label, macs[i]);
+
+    if (Helper::g_macs.empty()) {
+        MACInfo fallback;
+        fallback.address = "N/A";
+        fallback.transport = "N/A";
+        Helper::g_macs.push_back(fallback);
     }
+
+    for (const auto& m : Helper::g_macs)
+        Helper::addHWID("MAC: " + m.address, m.transport);
 }
 
 void Checks::collectUUID() {
     std::string val = Helper::runWMIC("csproduct", "UUID");
+    Helper::g_uuid = val;
     Helper::addHWID("System UUID", val);
 }
