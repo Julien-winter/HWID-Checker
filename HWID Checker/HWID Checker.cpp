@@ -71,6 +71,7 @@ int main(int argc, char* argv[]) {
 
         std::cout << "\nPress any key to get your hardware serials again...";
         std::cin.get();
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
     }
 
     Helper::closeLogging();

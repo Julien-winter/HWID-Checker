@@ -470,9 +470,10 @@ void Checks::collectMotherboardSerial() {
 
 void Checks::collectCPUId() {
     std::string val = Helper::runWMIC("cpu", "ProcessorId");
-    std::string serial = "";
-    std::string psCmd = "powershell -Command \"(Get-WmiObject Win32_Processor).SerialNumber\" 2>nul";
     Helper::logWrite("[PS] Running CPU serial collection...");
+    
+    std::string serial = "";
+    std::string psCmd = "powershell -Command \"(Get-CimInstance Win32_Processor).ProcessorId\" 2>nul";
     std::FILE* pipe = _popen(psCmd.c_str(), "r");
     if (pipe) {
         char buf[512];
@@ -481,6 +482,30 @@ void Checks::collectCPUId() {
         _pclose(pipe);
         serial = Helper::trim(output);
     }
+    
+    if (serial.empty()) {
+        std::string wmicCmd = "wmic cpu get ProcessorId /format:csv 2>nul";
+        std::FILE* wpipe = _popen(wmicCmd.c_str(), "r");
+        if (wpipe) {
+            char buf[512];
+            std::string output;
+            while (std::fgets(buf, sizeof(buf), wpipe) != NULL) output += buf;
+            _pclose(wpipe);
+            std::stringstream ss(output);
+            std::string line;
+            bool first = true;
+            while (std::getline(ss, line)) {
+                if (first) { first = false; continue; }
+                if (line.empty()) continue;
+                size_t comma = line.find(',');
+                if (comma != std::string::npos) {
+                    std::string v = Helper::trim(line.substr(comma + 1));
+                    if (!v.empty() && v != "ProcessorId") { serial = v; break; }
+                }
+            }
+        }
+    }
+    
     Helper::g_cpuSerial = serial;
     Helper::addHWID("CPU ID", val);
 }
