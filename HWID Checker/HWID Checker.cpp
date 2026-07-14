@@ -38,13 +38,7 @@ int main(int argc, char* argv[]) {
             std::cout << "Collecting hardware info...\n";
         }
 
-        std::thread t1([]{ Checks::collectMotherboardSerial(); });
-        std::thread t2([]{ Checks::collectCPUId(); });
-        std::thread t3([]{ Checks::collectDiskSerial(); });
-        std::thread t4([]{ Checks::collectBIOSSerial(); });
-        std::thread t5([]{ Checks::collectMAC(); });
-        std::thread t6([]{ Checks::collectUUID(); });
-        t1.join(); t2.join(); t3.join(); t4.join(); t5.join(); t6.join();
+        Checks::collectAll();
 
         Helper::displayResults();
         Helper::copyToClipboard();

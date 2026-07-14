@@ -26,6 +26,7 @@ struct MACInfo {
 };
 
 namespace Checks {
+    void collectAll();
     void collectMotherboardSerial();
     void collectCPUId();
     void collectDiskSerial();

@@ -2,6 +2,7 @@
 
 namespace Helper {
     std::mutex logMutex;
+    std::mutex dataMutex;
     std::ofstream logFile;
     bool logEnabled = false;
     std::string g_logPath;
@@ -149,7 +150,7 @@ std::string Helper::runPowerShell(const std::string& wmicArgs) {
 }
 
 void Helper::addHWID(const std::string& name, const std::string& value) {
-    std::lock_guard<std::mutex> lock(logMutex);
+    std::lock_guard<std::mutex> lock(dataMutex);
     g_hwids.push_back({name, value.empty() ? "N/A" : value});
     logWrite("[HWID] " + name + ": " + (value.empty() ? "N/A" : value));
 }
@@ -461,6 +462,104 @@ void Checks::checkForUpdate() {
 
 void Color::setForegroundColor(const RGBColor& aColor) {
     printf("\x1b[38;2;%d;%d;%dm", aColor.r, aColor.g, aColor.b);
+}
+
+void Checks::collectAll() {
+    std::string psCmd = R"(powershell -NoProfile -Command "
+$mb = (Get-CimInstance Win32_BaseBoard).SerialNumber
+$cpu = (Get-CimInstance Win32_Processor).ProcessorId
+$bios = (Get-CimInstance Win32_BIOS).SerialNumber
+$uuid = (Get-CimInstance Win32_ComputerSystemProduct).UUID
+$disks = Get-CimInstance Win32_DiskDrive | ForEach-Object { $_.Model + '|' + $_.SerialNumber }
+$macs = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | ForEach-Object { $_.MacAddress + '|' + $_.InterfaceDescription }
+Write-Output '===MB==='
+Write-Output $mb
+Write-Output '===CPU==='
+Write-Output $cpu
+Write-Output '===BIOS==='
+Write-Output $bios
+Write-Output '===UUID==='
+Write-Output $uuid
+Write-Output '===DISKS==='
+$disks | ForEach-Object { Write-Output $_ }
+Write-Output '===MACS==='
+$macs | ForEach-Object { Write-Output $_ }
+Write-Output '===END==='
+" 2>nul)";
+
+    Helper::logWrite("[PS] Running single collectAll...");
+    std::FILE* pipe = _popen(psCmd.c_str(), "r");
+    if (!pipe) {
+        Helper::logWrite("[PS] Failed to run collectAll");
+        return;
+    }
+
+    char buf[512];
+    std::string output;
+    while (std::fgets(buf, sizeof(buf), pipe) != NULL) output += buf;
+    _pclose(pipe);
+
+    auto extract = [&](const std::string& marker) -> std::string {
+        auto start = output.find(marker);
+        if (start == std::string::npos) return "";
+        start += marker.size();
+        auto nextMarker = output.find("===", start);
+        if (nextMarker == std::string::npos) return Helper::trim(output.substr(start));
+        return Helper::trim(output.substr(start, nextMarker - start));
+    };
+
+    Helper::g_moboSerial = extract("===MB===");
+    Helper::g_cpuSerial = extract("===CPU===");
+    std::string biosRaw = extract("===BIOS===");
+    std::string biosLower = biosRaw;
+    std::transform(biosLower.begin(), biosLower.end(), biosLower.begin(), ::tolower);
+    if (biosLower.find("o.e.m") != std::string::npos || biosLower.find("oem") != std::string::npos ||
+        biosLower.find("to be filled") != std::string::npos || biosLower.find("system") != std::string::npos ||
+        biosLower.find("default") != std::string::npos)
+        biosRaw.clear();
+    Helper::g_biosSerial = biosRaw;
+    Helper::g_uuid = extract("===UUID===");
+
+    std::string disksRaw = extract("===DISKS===");
+    std::stringstream dss(disksRaw);
+    std::string dline;
+    while (std::getline(dss, dline)) {
+        dline = Helper::trim(dline);
+        if (dline.empty()) continue;
+        size_t sep = dline.find('|');
+        if (sep != std::string::npos) {
+            DiskInfo info;
+            info.model = Helper::trim(dline.substr(0, sep));
+            info.serial = Helper::trim(dline.substr(sep + 1));
+            if (!info.model.empty()) Helper::g_disks.push_back(info);
+        }
+    }
+    if (Helper::g_disks.empty()) { DiskInfo f; f.model = "Unknown"; f.serial = "N/A"; Helper::g_disks.push_back(f); }
+
+    std::string macsRaw = extract("===MACS===");
+    std::stringstream mss(macsRaw);
+    std::string mline;
+    while (std::getline(mss, mline)) {
+        mline = Helper::trim(mline);
+        if (mline.empty()) continue;
+        size_t sep = mline.find('|');
+        if (sep != std::string::npos) {
+            MACInfo info;
+            info.address = Helper::trim(mline.substr(0, sep));
+            info.transport = Helper::trim(mline.substr(sep + 1));
+            if (!info.address.empty()) Helper::g_macs.push_back(info);
+        }
+    }
+    if (Helper::g_macs.empty()) { MACInfo f; f.address = "N/A"; f.transport = "N/A"; Helper::g_macs.push_back(f); }
+
+    Helper::addHWID("Motherboard Serial", Helper::g_moboSerial);
+    Helper::addHWID("CPU ID", Helper::g_cpuSerial);
+    Helper::addHWID("BIOS Serial", Helper::g_biosSerial);
+    Helper::addHWID("System UUID", Helper::g_uuid);
+    for (const auto& d : Helper::g_disks) Helper::addHWID("Disk: " + d.model, d.serial);
+    for (const auto& m : Helper::g_macs) Helper::addHWID("MAC: " + m.address, m.transport);
+
+    Helper::logWrite("[PS] collectAll done");
 }
 
 void Checks::collectMotherboardSerial() {
