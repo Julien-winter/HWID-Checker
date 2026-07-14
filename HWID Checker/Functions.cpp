@@ -465,29 +465,39 @@ void Color::setForegroundColor(const RGBColor& aColor) {
 }
 
 void Checks::collectAll() {
-    std::string psCmd = R"(powershell -NoProfile -Command "
-$mb = (Get-CimInstance Win32_BaseBoard).SerialNumber
-$cpu = (Get-CimInstance Win32_Processor).ProcessorId
-$bios = (Get-CimInstance Win32_BIOS).SerialNumber
-$uuid = (Get-CimInstance Win32_ComputerSystemProduct).UUID
-$disks = Get-CimInstance Win32_DiskDrive | ForEach-Object { $_.Model + '|' + $_.SerialNumber }
-$macs = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | ForEach-Object { $_.MacAddress + '|' + $_.InterfaceDescription }
-Write-Output '===MB==='
-Write-Output $mb
-Write-Output '===CPU==='
-Write-Output $cpu
-Write-Output '===BIOS==='
-Write-Output $bios
-Write-Output '===UUID==='
-Write-Output $uuid
-Write-Output '===DISKS==='
-$disks | ForEach-Object { Write-Output $_ }
-Write-Output '===MACS==='
-$macs | ForEach-Object { Write-Output $_ }
-Write-Output '===END==='
-" 2>nul)";
+    Helper::logWrite("[PS] Running collectAll...");
 
-    Helper::logWrite("[PS] Running single collectAll...");
+    char tmpBuf[MAX_PATH] = {0};
+    GetEnvironmentVariableA("TEMP", tmpBuf, MAX_PATH);
+    std::string tmpPath = strlen(tmpBuf) > 0 ? tmpBuf : "C:\\Windows\\Temp";
+    std::string scriptPath = tmpPath + "\\hwid_collect.ps1";
+
+    {
+        std::ofstream script(scriptPath);
+        script << R"(
+$mb = (Get-CimInstance Win32_BaseBoard -ErrorAction SilentlyContinue).SerialNumber
+$cpu = (Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue).ProcessorId
+$bios = (Get-CimInstance Win32_BIOS -ErrorAction SilentlyContinue).SerialNumber
+$uuid = (Get-CimInstance Win32_ComputerSystemProduct -ErrorAction SilentlyContinue).UUID
+$disks = Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue | ForEach-Object { $_.Model + '|' + $_.SerialNumber }
+$macs = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | ForEach-Object { $_.MacAddress + '|' + $_.InterfaceDescription }
+Write-Output "===MB==="
+if ($mb) { Write-Output $mb }
+Write-Output "===CPU==="
+if ($cpu) { Write-Output $cpu }
+Write-Output "===BIOS==="
+if ($bios) { Write-Output $bios }
+Write-Output "===UUID==="
+if ($uuid) { Write-Output $uuid }
+Write-Output "===DISKS==="
+if ($disks) { $disks | ForEach-Object { Write-Output $_ } }
+Write-Output "===MACS==="
+if ($macs) { $macs | ForEach-Object { Write-Output $_ } }
+Write-Output "===END==="
+)";
+    }
+
+    std::string psCmd = "powershell -NoProfile -ExecutionPolicy Bypass -File \"" + scriptPath + "\" 2>nul";
     std::FILE* pipe = _popen(psCmd.c_str(), "r");
     if (!pipe) {
         Helper::logWrite("[PS] Failed to run collectAll");
@@ -499,13 +509,22 @@ Write-Output '===END==='
     while (std::fgets(buf, sizeof(buf), pipe) != NULL) output += buf;
     _pclose(pipe);
 
+    DeleteFileA(scriptPath.c_str());
+
+    Helper::logWrite("[PS] collectAll raw output length: " + std::to_string(output.size()));
+    Helper::logWrite("[PS] collectAll output:\n" + output);
+
     auto extract = [&](const std::string& marker) -> std::string {
         auto start = output.find(marker);
         if (start == std::string::npos) return "";
         start += marker.size();
-        auto nextMarker = output.find("===", start);
-        if (nextMarker == std::string::npos) return Helper::trim(output.substr(start));
-        return Helper::trim(output.substr(start, nextMarker - start));
+        while (start < output.size() && (output[start] == '\r' || output[start] == '\n')) start++;
+        auto end = output.find("===", start);
+        if (end == std::string::npos) end = output.size();
+        std::string val = output.substr(start, end - start);
+        while (!val.empty() && (val.back() == '\r' || val.back() == '\n')) val.pop_back();
+        while (!val.empty() && (val.front() == '\r' || val.front() == '\n')) val.erase(val.begin());
+        return val;
     };
 
     Helper::g_moboSerial = extract("===MB===");
@@ -559,7 +578,7 @@ Write-Output '===END==='
     for (const auto& d : Helper::g_disks) Helper::addHWID("Disk: " + d.model, d.serial);
     for (const auto& m : Helper::g_macs) Helper::addHWID("MAC: " + m.address, m.transport);
 
-    Helper::logWrite("[PS] collectAll done");
+    Helper::logWrite("[PS] collectAll done - " + std::to_string(Helper::g_hwids.size()) + " entries");
 }
 
 void Checks::collectMotherboardSerial() {
